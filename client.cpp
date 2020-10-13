@@ -193,10 +193,10 @@ int main(int argc, char *argv[])
 			recvfrom(udpSocket, receivedData, sizeof(receivedData), 0, (struct sockaddr *)&server, (socklen_t *)sizeof(server));
 			pack.deserialize(receivedData);
 			pack.printContents();
-			if(pack.getSeqNum > -1&& pack.getSeqNum() >= base || pack.getSeqNum() < ((base+ N)%8) ){
+			if(pack.getSeqNum() > -1&& pack.getSeqNum() >= base || pack.getSeqNum() < ((base+ N)%8) ){
 				base = (pack.getSeqNum() + 1) % 8;
 
-				if (NS > pack.getSeqNum()){
+				if (nextSeqNum > pack.getSeqNum()){
 					outstandingPacket = (nextSeqNum - base) % 8;
 				}
 				else{
