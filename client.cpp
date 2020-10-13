@@ -35,6 +35,7 @@ int main(int argc, char *argv[])
 		//exit(1);
 	}
 
+	//server address
 	struct hostent *s;
 	s = gethostbyname(argv[1]);
 	int portNo;
@@ -51,7 +52,6 @@ int main(int argc, char *argv[])
 		  s->h_length);
 
 	// udp method to transfer file
-
 	int udpSocket = 0;
 	if ((udpSocket = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
 	{
@@ -59,37 +59,26 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-	server.sin_port = htons(portNo); //new randomport to communicate
-
+	//file descriptor
 	FILE *file;					//holding the file to read
 	file = fopen(argv[3], "r"); // filename
 	FILE *seqNumLog;			//holding the log file descriptor
 	FILE *ackLog;
+
+	//setting up for select
 	fd_set fileDescriptors;
 	FD_ZERO(&fileDescriptors);
 	FD_SET(udpSocket, &fileDescriptors);
 
+	seqNumLog = fopen("clientseqnum.log", "w"); //creating or re-writing existing file
+	ackLog = fopen("clientack.log", "w");
+
+	//file opened correctly
 	if (file == NULL)
 	{
 		cout << "Error opening file " << argv[3] << " !" << endl;
 		exit(1);
 	}
-
-	int type = 0;
-	int seqnum = 0;
-	char data[7][31];
-	for(int j=0; j < 7; j++){
-		data[j][31] = '\0';
-	}
-	int length = 30;
-	char dataPacket[37];
-	memset(dataPacket, 0, sizeof(dataPacket));
-	int nextSeqNum = 1;
-	int base = 1;
-	int N = 7;
-	packet pack = packet(0,0, 0,0);
-	seqNumLog = fopen("clientseqnum.log", "w"); //creating or re-writing existing file
-	ackLog = fopen("clientack.log", "w");
 
 	if (seqNumLog == NULL)
 	{
@@ -103,27 +92,46 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
+	int type = 0;
+	int seqnum = -1;
+	char data[7][31];
+
+	for (int j = 0; j < 7; j++)
+	{
+		memset(data[j], '\0', sizeof(data[j]));
+	}
+
+	int length = 30;
+	char dataPacket[42];
+	memset(dataPacket, '\0', sizeof(dataPacket));
+
+	int nextSeqNum = 1;
+	int base = 1;
+	int N = 7;
+	packet pack = packet(0, 0, 0, NULL);
+
 	struct timeval timer;
 
 	char strSeqNumLog[4];
 	char receivedData[42];
 
 	bool endOfFilereached = false;
-	
 
 	while (!endOfFilereached)
 	{
 		while (nextSeqNum < base + N)
 		{
-			memset(&data, 0, sizeof(data));
+			seqnum++;
+			seqnum = seqnum % 8;
+
 			memset(&dataPacket, 0, sizeof(dataPacket));
 			int readCount = fread(data[seqnum], 1, length, file);
-			
+
 			if (readCount == length)
 			{
 				pack = packet(type, seqnum, length, data[seqnum]);
 				pack.serialize(dataPacket);
-				
+
 				//send the message to server
 				sendto(udpSocket, dataPacket, sizeof(dataPacket), 0, (struct sockaddr *)&server, sizeof(server));
 				cout << "-----------------------------------------" << endl;
@@ -132,7 +140,6 @@ int main(int argc, char *argv[])
 
 				sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
 				fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
-				seqnum = ++seqnum % 8;
 				nextSeqNum++;
 			}
 			else
@@ -148,10 +155,12 @@ int main(int argc, char *argv[])
 
 				sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
 				fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
-				seqnum = ++seqnum % 8;
+
 				nextSeqNum++;
 				endOfFilereached = true;
 
+				seqnum++;
+				seqnum = seqnum % 8;
 				pack = packet(3, seqnum, 0, NULL);
 				pack.serialize(dataPacket);
 
@@ -161,24 +170,27 @@ int main(int argc, char *argv[])
 
 				sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
 				fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
-				seqnum = seqnum++ % 8;
+
 				nextSeqNum++;
 				endOfFilereached = true;
 				break;
 			}
 		}
-		timer.tv_sec = 1;
+		timer.tv_sec = 2;
 		timer.tv_usec = 0;
 		int setTimer = select(udpSocket, &fileDescriptors, NULL, NULL, &timer);
+		int expectedAck < 0;
 		if (setTimer > 0)
 		{
 			recvfrom(udpSocket, receivedData, sizeof(receivedData), 0, (struct sockaddr *)&server, (socklen_t *)sizeof(server));
 			pack.deserialize(receivedData);
 			pack.printContents();
+			
 			sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
 			fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), ackLog);
 			base = pack.getSeqNum() + 1;
 		}
+
 		else if (setTimer < 0)
 		{
 			std::cout << "Socket Error: " << strerror(errno) << " \n";
@@ -188,20 +200,24 @@ int main(int argc, char *argv[])
 		{
 			cout << "\n**********Timeout Occured*******************" << endl;
 			cout << "Resending all packets....." << endl;
-			for (int i = 0; i < N; ++i)
-			{
-				if (data[i] != nullptr){
-				pack = packet(type, seqnum, length, data[i]);
-				pack.serialize(dataPacket);
-				
-				//send the message to server
-				sendto(udpSocket, dataPacket, sizeof(dataPacket), 0, (struct sockaddr *)&server, sizeof(server));
-				cout << "-----------------------------------------" << endl;
-				pack.printContents();
-				memset(&strSeqNumLog, 0, sizeof(strSeqNumLog));
 
-				sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
-				fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
+			for (int i = (seqnum - 6) % 8; i < seqnum + 1; ++i)
+			{
+				if (data[i] != nullptr)
+				{
+					pack = packet(type, i, length, data[i]);
+
+					pack.serialize(dataPacket);
+
+					//send the message to server
+					sendto(udpSocket, dataPacket, sizeof(dataPacket), 0, (struct sockaddr *)&server, sizeof(server));
+					cout << "-----------------------------------------" << endl;
+					pack.printContents();
+
+					memset(&strSeqNumLog, 0, sizeof(strSeqNumLog));
+
+					sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
+					fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
 				}
 			}
 		}
@@ -209,6 +225,4 @@ int main(int argc, char *argv[])
 	fclose(seqNumLog);
 	fclose(ackLog);
 	close(udpSocket);
-
-	return 0;
 }
