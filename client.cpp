@@ -7,25 +7,21 @@
  Due Date - September 15, 2020
 ****************************************************/
 
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#include <cstring>
+#include <cstdlib>
+#include <iostream>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <netinet/ip.h>
-#include <arpa/inet.h>
 #include <netdb.h>
 #include <iostream>
 #include <fstream>
-#include <ctime>
-#include <time.h>
-#include <sys/select.h>
-#include <sys/unistd.h>
-#include <sys/fcntl.h>
-#include <errno.h>
+#include <arpa/inet.h>
 #include "packet.h"
+#include <math.h>
+#include <time.h>
+#include <unistd.h>
 #include "packet.cpp"
 
 using namespace std;
@@ -33,21 +29,22 @@ using namespace std;
 int main(int argc, char *argv[])
 {
 	//output the usage when length is not 4
-	if (argc != 4) {
+	if (argc != 4)
+	{
 		printf("%s \n", "Usage: ./client localhost <port number> <filename>");
-		exit(1);
+		//exit(1);
 	}
 
 	struct hostent *s;
 	s = gethostbyname(argv[1]);
-	int portno;
+	int portNo;
 	struct sockaddr_in server;
 	socklen_t slen = sizeof(server);
-	portno = atoi(argv[2]);
+	portNo = atoi(argv[2]);
 
 	bzero((char *)&server, sizeof(server));
 	server.sin_family = AF_INET;
-	server.sin_port = htons(portno);
+	server.sin_port = htons(portNo);
 
 	bcopy((char *)s->h_addr,
 		  (char *)&server.sin_addr.s_addr,
@@ -62,92 +59,147 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-	server.sin_port = htons(portno); //new randomport to communicate
+	server.sin_port = htons(portNo); //new randomport to communicate
 
-	FILE *file; //holding the file to read
+	FILE *file;					//holding the file to read
 	file = fopen(argv[3], "r"); // filename
+	FILE *seqNumLog;			//holding the log file descriptor
+	FILE *ackLog;
+	fd_set fileDescriptors;
+	FD_ZERO(&fileDescriptors);
+	FD_SET(udpSocket, &fileDescriptors);
 
 	if (file == NULL)
 	{
-		std::cout << "Error opening file!" << std::endl;
+		cout << "Error opening file " << argv[3] << " !" << endl;
 		exit(1);
 	}
 
-
-	char Datatosend[8][30]; //array of 7 char*
-	
-
 	int type = 0;
 	int seqnum = 0;
-	int length;
-	int ackseq = -1;
-	int window = 7;
-	int sendbase = 0;
-	int timeout;
-	int nextseqnum = 1;
-	int outPacket = 0;
-	int loc;
+	char data[30];
+	int length = sizeof(data);
+	char dataPacket[7][37];
+	int nextSeqNum = 1;
+	int base = 1;
+	int N = 7;
+	packet pack;
+	seqNumLog = fopen("clientseqnum.log", "w"); //creating or re-writing existing file
+	ackLog = fopen("clientack.log", "w");
 
-	ofstream seqnumfile;
-	seqnumfile.open("clientseqnum.log");
-
-	ofstream acknumfile;
-	acknumfile.open("clientack.log");
-
-	struct timeval tval;
-	tval.tv_sec = 2;
-	tval.tv_usec = 0;
-
-	int sockettime = setsockopt(udpSocket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tval, sizeof(tval));
-	if (sockettime < 0)
+	if (seqNumLog == NULL)
 	{
-
-		perror("SetSockopt error\n");
+		std::cout << "Error opening file clientseqnum.log!" << std::endl;
+		exit(1);
 	}
 
-	printf("\n------------------------\n");
-	while (1)
+	if (ackLog == NULL)
 	{
-		memset(sentData, 0, sizeof(sentData));
-		memset(chartosend, 0, sizeof(chartosend));
-		memset(receivedData, 0, sizeof(receivedData));
+		std::cout << "Error opening file clientack.log!" << std::endl;
+		exit(1);
+	}
 
-		// if outpacket less than 7 (form 0 - 6)
-		if (!readFile.eof() && outPacket < 7)
+	struct timeval timer;
+	timer.tv_sec = 0;
+	timer.tv_usec = 20;
+
+	char strSeqNumLog[4];
+	char receivedData[42];
+
+	bool endOfFilereached = false;
+
+	while (!endOfFilereached)
+	{
+		while (nextSeqNum < base + N)
 		{
-			type = 1;
+			memset(&data, 0, sizeof(data));
+			memset(&dataPacket[seqnum], 0, sizeof(dataPacket[seqnum]));
+			int readCount = fread(data, 1, length, file);
+			cout << readCount << endl;
+			if (readCount == length)
+			{
+				pack = packet(type, seqnum, length, data);
+				pack.serialize(dataPacket[seqnum]);
+				cout << 1 << endl;
+				//send the message to server
+				sendto(udpSocket, dataPacket[seqnum], sizeof(dataPacket[seqnum]), 0, (struct sockaddr *)&server, sizeof(server));
+				cout << "-----------------------------------------" << endl;
+				pack.printContents();
 
-			readFile.read(chartosend, sizeof(chartosend));
+				memset(&strSeqNumLog, 0, sizeof(strSeqNumLog));
 
-			length = strlen(chartosend); //length of the character to be sent
+				sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
+				fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
+				seqnum = ++seqnum % 8;
+				nextSeqNum++;
+			}
+			else
+			{
 
-			packet filepacket(type, seqnum, length, chartosend);
+				data[readCount] = '\0';
+				pack = packet(type, seqnum, readCount, data);
+				pack.serialize(dataPacket[seqnum]);
 
-			filepacket.serialize((char *)sentData);
+				//send the message to server
+				sendto(udpSocket, dataPacket[seqnum], sizeof(dataPacket[seqnum]), 0, (struct sockaddr *)&server, sizeof(server));
+				pack.printContents();
 
-			sendto(udpSocket, sentData, sizeof(sentData), 0, (struct sockaddr *)&server, sizeof(server));
-			filepacket.printContents();
+				sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
+				fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
+				seqnum = ++seqnum % 8;
+				nextSeqNum++;
+				endOfFilereached = true;
 
-			seqnumfile << seqnum << "\n"; //write in a file
+				pack = packet(3, seqnum, 0, NULL);
+				pack.serialize(dataPacket[seqnum]);
 
-			//next seq number and outpacket
-			nextseqnum = (seqnum + 1) % 8;
-			outPacket = outPacket + 1;
+				//send the message to server
+				sendto(udpSocket, dataPacket[seqnum], sizeof(dataPacket[seqnum]), 0, (struct sockaddr *)&server, sizeof(server));
+				pack.printContents();
 
-			printf("SB: %d\n", sendbase);
-			printf("NS: %d\n", nextseqnum);
-			printf("Number of outstanding packets: %d\n", outPacket);
-			printf("--------------------------\n");
-			// Increment
-			seqnum = (seqnum + 1) % 8;
+				sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
+				fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
+				seqnum = seqnum++ % 8;
+				nextSeqNum++;
+				endOfFilereached = true;
+				break;
+			}
 		}
-		
+
+		int setTimer = select(udpSocket, &fileDescriptors, NULL, NULL, &timer);
+		if (setTimer > 0)
+		{
+			recvfrom(udpSocket, receivedData, sizeof(receivedData), 0, (struct sockaddr *)&server, (socklen_t *)sizeof(server));
+			pack.deserialize(receivedData);
+			pack.printContents();
+			sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
+			fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), ackLog);
+			base = pack.getSeqNum() + 1;
+		}
+		else if (setTimer < 0)
+		{
+			std::cout << "Socket Error: " << strerror(errno) << " \n";
+			exit(1);
+		}
+		else
+		{
+			cout << "\n**********Timeout Occured*******************" << endl;
+			cout << "Resending all packets....." << endl;
+			for (int i = 0; i < N && dataPacket[i] != 0; ++i)
+			{
+
+				sendto(udpSocket, dataPacket[i], sizeof(dataPacket[i]), 0, (struct sockaddr *)&server, sizeof(server));
+				packet pack2(0, 0, 0, 0);
+				pack2.deserialize(dataPacket[i]);
+
+				pack.printContents();
+				sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
+				fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
+			}
+		}
 	}
-
-	readFile.close();
-	acknumfile.close();
-	seqnumfile.close();
-
+	fclose(seqNumLog);
+	fclose(ackLog);
 	close(udpSocket);
 
 	return 0;
