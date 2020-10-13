@@ -107,7 +107,7 @@ int main(int argc, char *argv[])
 
 	int nextSeqNum = 1;
 	int base = 0;
-	int N = ;
+	int N = 7;
 	packet pack = packet(0, 0, 0, NULL);
 
 	struct timeval timer;
@@ -116,15 +116,14 @@ int main(int argc, char *argv[])
 	char receivedData[42];
 
 	bool endOfFileReached = false;
-	int outstandingPacket = 1;
+	int outstandingPacket = 0;
 
 	while (!endOfFileReached)
 	{
-		while (outstandingPacket < 8)
+		while (outstandingPacket < 7)
 		{
 			seqnum++;
 			seqnum = seqnum % 8;
-			outstandingPacket++;
 
 			memset(&dataPacket, 0, sizeof(dataPacket));
 			int readCount = fread(data[seqnum], 1, length, file);
@@ -140,13 +139,15 @@ int main(int argc, char *argv[])
 				pack.printContents();
 				cout << "SB: " << base << endl;
 				cout << "NS: " << nextSeqNum << endl;
-				cout << "Number of Outstanding Packets: " << outstandingPacket-1 << endl;
+				cout << "Number of Outstanding Packets: " << outstandingPacket+1 << endl;
 				memset(&strSeqNumLog, 0, sizeof(strSeqNumLog));
 
 				sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
 				fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
+				outstandingPacket++;
 				nextSeqNum++;
 				nextSeqNum = nextSeqNum % 8;
+				
 			}
 			else
 			{
@@ -192,8 +193,16 @@ int main(int argc, char *argv[])
 			recvfrom(udpSocket, receivedData, sizeof(receivedData), 0, (struct sockaddr *)&server, (socklen_t *)sizeof(server));
 			pack.deserialize(receivedData);
 			pack.printContents();
-			outstandingPacket = 8;
-			outstandingPacket = outstandingPacket - pack.getSeqNum() + 1;
+			if(pack.getSeqNum > -1&& pack.getSeqNum() >= base || pack.getSeqNum() < ((base+ N)%8) ){
+				base = (pack.getSeqNum() + 1) % 8;
+
+				if (NS > pack.getSeqNum()){
+					outstandingPacket = (nextSeqNum - base) % 8;
+				}
+				else{
+					outstandingPacket = (N + NS - pack.getSeqNum()) % 8;
+				}
+			}
 			sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
 			fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), ackLog);
 			base++;
