@@ -77,13 +77,17 @@ int main(int argc, char *argv[])
 
 	int type = 0;
 	int seqnum = 0;
-	char data[30];
-	int length = sizeof(data);
-	char dataPacket[7][37];
+	char data[7][31];
+	for(int j=0; j < 7; j++){
+		data[j][31] = '\0';
+	}
+	int length = 30;
+	char dataPacket[37];
+	memset(dataPacket, 0, sizeof(dataPacket));
 	int nextSeqNum = 1;
 	int base = 1;
 	int N = 7;
-	packet pack;
+	packet pack = packet(0,0, 0,0);
 	seqNumLog = fopen("clientseqnum.log", "w"); //creating or re-writing existing file
 	ackLog = fopen("clientack.log", "w");
 
@@ -100,32 +104,30 @@ int main(int argc, char *argv[])
 	}
 
 	struct timeval timer;
-	timer.tv_sec = 0;
-	timer.tv_usec = 20;
 
 	char strSeqNumLog[4];
 	char receivedData[42];
 
 	bool endOfFilereached = false;
+	
 
 	while (!endOfFilereached)
 	{
 		while (nextSeqNum < base + N)
 		{
 			memset(&data, 0, sizeof(data));
-			memset(&dataPacket[seqnum], 0, sizeof(dataPacket[seqnum]));
-			int readCount = fread(data, 1, length, file);
-			cout << readCount << endl;
+			memset(&dataPacket, 0, sizeof(dataPacket));
+			int readCount = fread(data[seqnum], 1, length, file);
+			
 			if (readCount == length)
 			{
-				pack = packet(type, seqnum, length, data);
-				pack.serialize(dataPacket[seqnum]);
-				cout << 1 << endl;
+				pack = packet(type, seqnum, length, data[seqnum]);
+				pack.serialize(dataPacket);
+				
 				//send the message to server
-				sendto(udpSocket, dataPacket[seqnum], sizeof(dataPacket[seqnum]), 0, (struct sockaddr *)&server, sizeof(server));
+				sendto(udpSocket, dataPacket, sizeof(dataPacket), 0, (struct sockaddr *)&server, sizeof(server));
 				cout << "-----------------------------------------" << endl;
 				pack.printContents();
-
 				memset(&strSeqNumLog, 0, sizeof(strSeqNumLog));
 
 				sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
@@ -136,12 +138,12 @@ int main(int argc, char *argv[])
 			else
 			{
 
-				data[readCount] = '\0';
-				pack = packet(type, seqnum, readCount, data);
-				pack.serialize(dataPacket[seqnum]);
+				data[seqnum][readCount] = '\0';
+				pack = packet(type, seqnum, readCount, data[seqnum]);
+				pack.serialize(dataPacket);
 
 				//send the message to server
-				sendto(udpSocket, dataPacket[seqnum], sizeof(dataPacket[seqnum]), 0, (struct sockaddr *)&server, sizeof(server));
+				sendto(udpSocket, dataPacket, sizeof(dataPacket), 0, (struct sockaddr *)&server, sizeof(server));
 				pack.printContents();
 
 				sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
@@ -151,10 +153,10 @@ int main(int argc, char *argv[])
 				endOfFilereached = true;
 
 				pack = packet(3, seqnum, 0, NULL);
-				pack.serialize(dataPacket[seqnum]);
+				pack.serialize(dataPacket);
 
 				//send the message to server
-				sendto(udpSocket, dataPacket[seqnum], sizeof(dataPacket[seqnum]), 0, (struct sockaddr *)&server, sizeof(server));
+				sendto(udpSocket, dataPacket, sizeof(dataPacket), 0, (struct sockaddr *)&server, sizeof(server));
 				pack.printContents();
 
 				sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
@@ -165,7 +167,8 @@ int main(int argc, char *argv[])
 				break;
 			}
 		}
-
+		timer.tv_sec = 1;
+		timer.tv_usec = 0;
 		int setTimer = select(udpSocket, &fileDescriptors, NULL, NULL, &timer);
 		if (setTimer > 0)
 		{
@@ -185,16 +188,21 @@ int main(int argc, char *argv[])
 		{
 			cout << "\n**********Timeout Occured*******************" << endl;
 			cout << "Resending all packets....." << endl;
-			for (int i = 0; i < N && dataPacket[i] != 0; ++i)
+			for (int i = 0; i < N; ++i)
 			{
-
-				sendto(udpSocket, dataPacket[i], sizeof(dataPacket[i]), 0, (struct sockaddr *)&server, sizeof(server));
-				packet pack2(0, 0, 0, 0);
-				pack2.deserialize(dataPacket[i]);
-
+				if (data[i] != nullptr){
+				pack = packet(type, seqnum, length, data[i]);
+				pack.serialize(dataPacket);
+				
+				//send the message to server
+				sendto(udpSocket, dataPacket, sizeof(dataPacket), 0, (struct sockaddr *)&server, sizeof(server));
+				cout << "-----------------------------------------" << endl;
 				pack.printContents();
+				memset(&strSeqNumLog, 0, sizeof(strSeqNumLog));
+
 				sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
 				fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
+				}
 			}
 		}
 	}
