@@ -116,6 +116,7 @@ int main(int argc, char *argv[])
 	char receivedData[42];
 
 	bool endOfFilereached = false;
+	int outstandingPacket = 7;
 
 	while (!endOfFilereached)
 	{
@@ -176,10 +177,11 @@ int main(int argc, char *argv[])
 				break;
 			}
 		}
+		if (!endofFile){
 		timer.tv_sec = 2;
 		timer.tv_usec = 0;
 		int setTimer = select(udpSocket, &fileDescriptors, NULL, NULL, &timer);
-		int expectedAck < 0;
+		
 		if (setTimer > 0)
 		{
 			recvfrom(udpSocket, receivedData, sizeof(receivedData), 0, (struct sockaddr *)&server, (socklen_t *)sizeof(server));
@@ -220,6 +222,7 @@ int main(int argc, char *argv[])
 					fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
 				}
 			}
+		}
 		}
 	}
 	fclose(seqNumLog);
