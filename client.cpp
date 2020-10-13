@@ -94,9 +94,9 @@ int main(int argc, char *argv[])
 
 	int type = 0;
 	int seqnum = -1;
-	char data[7][31];
+	char data[8][31];
 
-	for (int j = 0; j < 7; j++)
+	for (int j = 0; j < 8; j++)
 	{
 		memset(data[j], '\0', sizeof(data[j]));
 	}
@@ -106,8 +106,8 @@ int main(int argc, char *argv[])
 	memset(dataPacket, '\0', sizeof(dataPacket));
 
 	int nextSeqNum = 1;
-	int base = 1;
-	int N = 7;
+	int base = 0;
+	int N = ;
 	packet pack = packet(0, 0, 0, NULL);
 
 	struct timeval timer;
@@ -115,15 +115,16 @@ int main(int argc, char *argv[])
 	char strSeqNumLog[4];
 	char receivedData[42];
 
-	bool endOfFilereached = false;
-	int outstandingPacket = 7;
+	bool endOfFileReached = false;
+	int outstandingPacket = 1;
 
-	while (!endOfFilereached)
+	while (!endOfFileReached)
 	{
-		while (nextSeqNum < base + N)
+		while (outstandingPacket < 8)
 		{
 			seqnum++;
 			seqnum = seqnum % 8;
+			outstandingPacket++;
 
 			memset(&dataPacket, 0, sizeof(dataPacket));
 			int readCount = fread(data[seqnum], 1, length, file);
@@ -137,11 +138,15 @@ int main(int argc, char *argv[])
 				sendto(udpSocket, dataPacket, sizeof(dataPacket), 0, (struct sockaddr *)&server, sizeof(server));
 				cout << "-----------------------------------------" << endl;
 				pack.printContents();
+				cout << "SB: " << base << endl;
+				cout << "NS: " << nextSeqNum << endl;
+				cout << "Number of Outstanding Packets: " << outstandingPacket-1 << endl;
 				memset(&strSeqNumLog, 0, sizeof(strSeqNumLog));
 
 				sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
 				fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
 				nextSeqNum++;
+				nextSeqNum = nextSeqNum % 8;
 			}
 			else
 			{
@@ -158,7 +163,7 @@ int main(int argc, char *argv[])
 				fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
 
 				nextSeqNum++;
-				endOfFilereached = true;
+				endOfFileReached = true;
 
 				seqnum++;
 				seqnum = seqnum % 8;
@@ -173,11 +178,11 @@ int main(int argc, char *argv[])
 				fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
 
 				nextSeqNum++;
-				endOfFilereached = true;
+				endOfFileReached = true;
 				break;
 			}
 		}
-		if (!endofFile){
+		if (!endOfFileReached){
 		timer.tv_sec = 2;
 		timer.tv_usec = 0;
 		int setTimer = select(udpSocket, &fileDescriptors, NULL, NULL, &timer);
@@ -187,10 +192,12 @@ int main(int argc, char *argv[])
 			recvfrom(udpSocket, receivedData, sizeof(receivedData), 0, (struct sockaddr *)&server, (socklen_t *)sizeof(server));
 			pack.deserialize(receivedData);
 			pack.printContents();
-			
+			outstandingPacket = 8;
+			outstandingPacket = outstandingPacket - pack.getSeqNum() + 1;
 			sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
 			fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), ackLog);
-			base = pack.getSeqNum() + 1;
+			base++;
+			base = base % 8;
 		}
 
 		else if (setTimer < 0)
