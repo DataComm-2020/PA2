@@ -1,7 +1,3 @@
-/****************************************************
-
-****************************************************/
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -62,11 +58,10 @@ int main(int argc, char *argv[])
   int seqnum = 0;
   int acktype = 0;
   int expectseq = 0;
-  int wantedseq;
 
   packet filepacket(type, seqnum, sizeof(data), data);
 
-  printf("\n------------------------------\n");
+
   while (1){
 
     memset(payload, 0, sizeof(payload));
@@ -83,23 +78,17 @@ int main(int argc, char *argv[])
     seqnum = filepacket.getSeqNum();
 
     arrivalfile << seqnum << "\n";
-
+    printf("\n------------------------------\n");
     filepacket.printContents();
+
     printf("\nExpecting Rn: %d\n", expectseq);
     printf("sn: %d\n", seqnum);
-    if (expectseq != seqnum)
-    {
-      wantedseq = expectseq - 1;
-      packet ackpacket(acktype, wantedseq, 0, 0);
-      ackpacket.serialize((char *)ack);
-      sendto(udp_socket, ack, sizeof(ack), 0, (struct sockaddr *)&client, sizeof(client));
-      ackpacket.printContents();
 
+    
+    if (expectseq == seqnum)
+    {
+      
       printf("-----------------------------\n");
-    }
-
-    else
-    {
       if (filepacket.getType() == 3)
       {
 
@@ -117,8 +106,7 @@ int main(int argc, char *argv[])
         break;
       }
       // EOT packet
-      if (seqnum == expectseq)
-      {
+     
         outfile << filepacket.getData();
 
         packet ackpacket(acktype, seqnum, 0, 0);
@@ -132,7 +120,17 @@ int main(int argc, char *argv[])
 
         printf("---------------------------\n");
         expectseq = (expectseq + 1) % 8;
-      }
+      
+    }
+
+    else
+    {
+
+      packet ackpacket(acktype, expectseq, 0, 0);
+      ackpacket.serialize((char *)ack);
+      sendto(udp_socket, ack, sizeof(ack), 0, (struct sockaddr *)&client, sizeof(client));
+      ackpacket.printContents();
+      printf("---------------------------\n");
     
     }
   }
