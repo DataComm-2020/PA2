@@ -117,169 +117,153 @@ int main(int argc, char *argv[])
 	bool endOfFileReached = false;
 	int outstandingPacket = 0;
 	cout << "-----------------------------------------" << endl;
-	while (!endOfFileReached)
-	{
-		while (outstandingPacket < 7)
+	while (1)
+	{	
+		if(endOfFileReached && outstandingPacket == 0){
+			seqnum++;
+			seqnum = seqnum % 8;
+			pack = packet(3, seqnum, 0, NULL);
+			pack.serialize(dataPacket);
+			sendto(udpSocket, dataPacket, sizeof(dataPacket), 0, (struct sockaddr *)&server, sizeof(server));
+		}
+
+		while (outstandingPacket < 7 && !endOfFileReached)
 		{
 
 			seqnum++;
-					seqnum = seqnum % 8;
+			seqnum = seqnum % 8;
 			type = 1;
 
 			memset(&dataPacket, 0, sizeof(dataPacket));
 			int readCount = fread(data[seqnum], 1, length, file);
-			if (!endOfFileReached)
+			if (readCount == length)
 			{
-				if (readCount == length)
-				{
-					pack = packet(type, seqnum, length, data[seqnum]);
-					pack.serialize(dataPacket);
+				pack = packet(type, seqnum, length, data[seqnum]);
+				pack.serialize(dataPacket);
 
-					//send the message to server
-					sendto(udpSocket, dataPacket, sizeof(dataPacket), 0, (struct sockaddr *)&server, sizeof(server));
+				//send the message to server
+				sendto(udpSocket, dataPacket, sizeof(dataPacket), 0, (struct sockaddr *)&server, sizeof(server));
 
-					outstandingPacket = (outstandingPacket + 1) % 8;
-					nextSeqNum = (seqnum + 1) % 8;
+				outstandingPacket = (outstandingPacket + 1) % 8;
+				nextSeqNum = (seqnum + 1) % 8;
 
-					cout << outstandingPacket << endl;
-					pack.printContents();
-					cout << "SB: " << base << endl;
-					cout << "NS: " << nextSeqNum << endl;
-					cout << "Number of Outstanding Packets: " << outstandingPacket << endl;
-					cout << "-----------------------------------------" << endl;
-					memset(&strSeqNumLog, 0, sizeof(strSeqNumLog));
+				cout << outstandingPacket << endl;
+				pack.printContents();
+				cout << "SB: " << base << endl;
+				cout << "NS: " << nextSeqNum << endl;
+				cout << "Number of Outstanding Packets: " << outstandingPacket << endl;
+				cout << "-----------------------------------------" << endl;
+				memset(&strSeqNumLog, 0, sizeof(strSeqNumLog));
 
-					sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
-					fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
-
-					
-				}
-				else
-				{
-					if (readCount == 0 && endOfFileReached == false)
-					{
-						endOfFileReached = true;
-					}
-					else
-					{
-						data[seqnum][readCount] = '\0';
-						pack = packet(type, seqnum, readCount, data[seqnum]);
-						pack.serialize(dataPacket);
-
-						//send the message to server
-						sendto(udpSocket, dataPacket, sizeof(dataPacket), 0, (struct sockaddr *)&server, sizeof(server));
-						pack.printContents();
-						cout << "SB: " << base << endl;
-						cout << "NS: " << nextSeqNum << endl;
-						cout << "Number of Outstanding Packets: " << outstandingPacket + 1 << endl;
-						memset(&strSeqNumLog, 0, sizeof(strSeqNumLog));
-
-						sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
-						fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
-						outstandingPacket++;
-						nextSeqNum++;
-						endOfFileReached = true;
-					}
-				}
+				sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
+				fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
 			}
 			else
 			{
-				//send end of file message to the server
 
-				seqnum++;
-				seqnum = seqnum % 8;
-
-				pack = packet(3, seqnum, 0, NULL);
+				data[seqnum][readCount] = '\0';
+				pack = packet(type, seqnum, readCount, data[seqnum]);
 				pack.serialize(dataPacket);
 
+				//send the message to server
 				sendto(udpSocket, dataPacket, sizeof(dataPacket), 0, (struct sockaddr *)&server, sizeof(server));
 				pack.printContents();
 				cout << "SB: " << base << endl;
 				cout << "NS: " << nextSeqNum << endl;
 				cout << "Number of Outstanding Packets: " << outstandingPacket + 1 << endl;
+				memset(&strSeqNumLog, 0, sizeof(strSeqNumLog));
 
 				sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
 				fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
-				outstandingPacket = (outstandingPacket+1)%8;
+				outstandingPacket++;
 				nextSeqNum++;
-				nextSeqNum = nextSeqNum % 8;
+				endOfFileReached = true;
 				break;
 			}
+
 		}
-		if (!endOfFileReached)
+		timer.tv_sec = 2;
+		timer.tv_usec = 0;
+		int m = udpSocket;
+		int setTimer = select(m + 1, &fileDescriptors, NULL, NULL, &timer);
+
+		if (setTimer > 0)
 		{
-			timer.tv_sec = 2;
-			timer.tv_usec = 0;
-			int m = udpSocket;
-			int setTimer = select(m + 1, &fileDescriptors, NULL, NULL, &timer);
-
-			if (setTimer > 0)
+			int c = recvfrom(udpSocket, receivedData, sizeof(receivedData), 0, (struct sockaddr *)&server, &slen);
+			if (c < 0)
 			{
-				int c = recvfrom(udpSocket, receivedData, sizeof(receivedData), 0, (struct sockaddr *)&server, &slen);
-				if (c < 0)
-				{
 
-					perror("Receiving error\n");
-				}
-				packet pack(0, 0, 0, NULL);
-
-				pack.deserialize((char *)receivedData);
-				pack.printContents();
-				int ackseq = pack.getSeqNum();
-				if (ackseq >= base || (ackseq < (base + N) % 8 && ackseq >= 0))
-				{
-					base = (pack.getSeqNum() + 1) % 8;
-
-					if (nextSeqNum > pack.getSeqNum())
-					{
-						outstandingPacket = (nextSeqNum - base) % 8;
-					}
-					else
-					{
-						outstandingPacket = (N - (abs(nextSeqNum - ackseq))) % 8;
-					}
-				}
-				printf("SB: %d\n", base);
-				printf("NS: %d\n", nextSeqNum);
-				printf("Number of outstanding packets: %d\n", outstandingPacket);
-				printf("------------------------------------------------------\n");
-				sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
-				fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), ackLog);
-				
+				perror("Receiving error\n");
 			}
+			packet pack(0, 0, 0, NULL);
 
-			else if (setTimer < 0)
-			{
-				std::cout << "Socket Error: " << strerror(errno) << " \n";
-				exit(1);
+			pack.deserialize((char *)receivedData);
+			pack.printContents();
+			if(pack.getType() == 2){
+			printf("SB: %d\n", base);
+			printf("NS: %d\n", nextSeqNum);
+			printf("Number of outstanding packets: %d\n", outstandingPacket);
+			printf("------------------------------------------------------\n");
+			sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
+			fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), ackLog);
+			break;	
 			}
-			else
+			else{
+			int ackseq = pack.getSeqNum();
+			if (ackseq >= base || (ackseq < (base + N) % 8 && ackseq >= 0))
 			{
-				cout << "\n**********Timeout Occured*******************" << endl;
-				cout << "Resending all packets....." << endl;
+				base = (pack.getSeqNum() + 1) % 8;
 
-				for (int i = (seqnum - 6) % 8; i < seqnum + 1; ++i)
+				if (nextSeqNum > pack.getSeqNum())
 				{
-					if (data[i] != nullptr)
-					{
-						pack = packet(type, i, length, data[i]);
+					outstandingPacket = (nextSeqNum - base) % 8;
+				}
+				else
+				{
+					outstandingPacket = (N - (abs(nextSeqNum - ackseq))) % 8;
+				}
+			}
+			printf("SB: %d\n", base);
+			printf("NS: %d\n", nextSeqNum);
+			printf("Number of outstanding packets: %d\n", outstandingPacket);
+			printf("------------------------------------------------------\n");
+			sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
+			fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), ackLog);
+			}
+		}
 
-						pack.serialize(dataPacket);
+		else if (setTimer < 0)
+		{
+			std::cout << "Socket Error: " << strerror(errno) << " \n";
+			exit(1);
+		}
+		else
+		{
+			cout << "\n**********Timeout Occured*******************" << endl;
+			cout << "Resending all packets....." << endl;
 
-						//send the message to server
-						sendto(udpSocket, dataPacket, sizeof(dataPacket), 0, (struct sockaddr *)&server, sizeof(server));
-						cout << "-----------------------------------------" << endl;
-						pack.printContents();
+			for (int i = (seqnum - 6) % 8; i < seqnum + 1; ++i)
+			{
+				if (data[i] != nullptr)
+				{
+					pack = packet(type, i, length, data[i]);
 
-						memset(&strSeqNumLog, 0, sizeof(strSeqNumLog));
+					pack.serialize(dataPacket);
 
-						sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
-						fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
-					}
+					//send the message to server
+					sendto(udpSocket, dataPacket, sizeof(dataPacket), 0, (struct sockaddr *)&server, sizeof(server));
+					cout << "-----------------------------------------" << endl;
+					pack.printContents();
+
+					memset(&strSeqNumLog, 0, sizeof(strSeqNumLog));
+
+					sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
+					fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
 				}
 			}
 		}
 	}
+
 	fclose(seqNumLog);
 	fclose(ackLog);
 	close(udpSocket);
