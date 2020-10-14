@@ -88,7 +88,6 @@ int main(int argc, char *argv[])
     if (expectseq == seqnum)
     {
       
-      printf("-----------------------------\n");
       if (filepacket.getType() == 3)
       {
 
@@ -97,7 +96,7 @@ int main(int argc, char *argv[])
         ackpacket.serialize((char *)ack);
         if (sendto(udp_socket, ack, sizeof(ack), 0, (struct sockaddr *)&client, sizeof(client)) == -1)
         {
-          perror("Sending when Type =3 Error \n");
+          perror("Sending Error");
         }
 
         ackpacket.printContents();
@@ -118,7 +117,7 @@ int main(int argc, char *argv[])
 
         ackpacket.printContents();
 
-        printf("---------------------------\n");
+
         expectseq = (expectseq + 1) % 8;
       
     }
