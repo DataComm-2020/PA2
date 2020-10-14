@@ -116,13 +116,15 @@ int main(int argc, char *argv[])
 
 	bool endOfFileReached = false;
 	int outstandingPacket = 0;
-
+	cout << "-----------------------------------------" << endl;
 	while (!endOfFileReached)
 	{
 		while (outstandingPacket < 7)
 		{
+
 			seqnum++;
-			seqnum = seqnum % 8;
+					seqnum = seqnum % 8;
+			type = 1;
 
 			memset(&dataPacket, 0, sizeof(dataPacket));
 			int readCount = fread(data[seqnum], 1, length, file);
@@ -135,18 +137,22 @@ int main(int argc, char *argv[])
 
 					//send the message to server
 					sendto(udpSocket, dataPacket, sizeof(dataPacket), 0, (struct sockaddr *)&server, sizeof(server));
-					cout << "-----------------------------------------" << endl;
+
+					outstandingPacket = (outstandingPacket + 1) % 8;
+					nextSeqNum = (seqnum + 1) % 8;
+
+					cout << outstandingPacket << endl;
 					pack.printContents();
 					cout << "SB: " << base << endl;
 					cout << "NS: " << nextSeqNum << endl;
-					cout << "Number of Outstanding Packets: " << outstandingPacket + 1 << endl;
+					cout << "Number of Outstanding Packets: " << outstandingPacket << endl;
+					cout << "-----------------------------------------" << endl;
 					memset(&strSeqNumLog, 0, sizeof(strSeqNumLog));
 
 					sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
 					fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
-					outstandingPacket++;
-					nextSeqNum++;
-					nextSeqNum = nextSeqNum % 8;
+
+					
 				}
 				else
 				{
@@ -194,7 +200,7 @@ int main(int argc, char *argv[])
 
 				sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
 				fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), seqNumLog);
-				outstandingPacket++;
+				outstandingPacket = (outstandingPacket+1)%8;
 				nextSeqNum++;
 				nextSeqNum = nextSeqNum % 8;
 				break;
@@ -205,21 +211,22 @@ int main(int argc, char *argv[])
 			timer.tv_sec = 2;
 			timer.tv_usec = 0;
 			int m = udpSocket;
-			int setTimer = select(m+1, &fileDescriptors, NULL, NULL, &timer);
-			
+			int setTimer = select(m + 1, &fileDescriptors, NULL, NULL, &timer);
+
 			if (setTimer > 0)
 			{
 				int c = recvfrom(udpSocket, receivedData, sizeof(receivedData), 0, (struct sockaddr *)&server, &slen);
-				if (c <0){
+				if (c < 0)
+				{
 
 					perror("Receiving error\n");
 				}
-				packet recvPack = packet(0, 0, 0, NULL);
-				memset(receivedData, '\0', sizeof(receivedData));
-				recvPack.deserialize((char*)receivedData);
-				exit(1);
-				recvPack.printContents();
-				if (recvPack.getSeqNum() > -1 && pack.getSeqNum() >= base || pack.getSeqNum() < ((base + N) % 8))
+				packet pack(0, 0, 0, NULL);
+
+				pack.deserialize((char *)receivedData);
+				pack.printContents();
+				int ackseq = pack.getSeqNum();
+				if (ackseq >= base || (ackseq < (base + N) % 8 && ackseq >= 0))
 				{
 					base = (pack.getSeqNum() + 1) % 8;
 
@@ -229,13 +236,16 @@ int main(int argc, char *argv[])
 					}
 					else
 					{
-						outstandingPacket = (N + nextSeqNum - pack.getSeqNum()) % 8;
+						outstandingPacket = (N - (abs(nextSeqNum - ackseq))) % 8;
 					}
 				}
+				printf("SB: %d\n", base);
+				printf("NS: %d\n", nextSeqNum);
+				printf("Number of outstanding packets: %d\n", outstandingPacket);
+				printf("------------------------------------------------------\n");
 				sprintf(strSeqNumLog, "%d\n", pack.getSeqNum());
 				fwrite(strSeqNumLog, 1, sizeof(strSeqNumLog), ackLog);
-				base++;
-				base = base % 8;
+				
 			}
 
 			else if (setTimer < 0)
