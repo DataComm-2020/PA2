@@ -29,16 +29,16 @@ using namespace std;
 
 int main(int argc, char *argv[])
 {
-	//output the usage when length is not 4
-	if (argc != 4)
+	//output the usage when length is not 5
+	if (argc != 5)
 	{
-		printf("%s \n", "Usage: ./client localhost <port number> <filename>");
+		printf("%s \n", "Usage: ./client localhost <send port number> <recieve port number> <filename>");
 		exit(1);
 	}
 
 
 
-	//server address
+	//sending to emulator address
 	struct hostent *s;
 	s = gethostbyname(argv[1]);
 	int portNo; //port number
@@ -59,18 +59,40 @@ int main(int argc, char *argv[])
 	bcopy((char *)s->h_addr,
 		  (char *)&server.sin_addr.s_addr,
 		  s->h_length);
+	
+
+	//receiving from emulator address
+	int portNo2; //port number
+	struct sockaddr_in recvServer;
+	portNo2 = atoi(argv[3]);
+
+
+	if(portNo2 < 1024 || portNo2 > 65355){
+		cout << "Port Error!!!! Must be between 1024 and 65355!!" << endl;
+		exit(1);
+	}
+
+	bzero((char *)&recvServer, sizeof(recvServer));
+	recvServer.sin_family = AF_INET;	 //IPv4
+	recvServer.sin_port = htons(portNo2); //to network byte order
+
+	bcopy((char *)s->h_addr,
+		  (char *)&recvServer.sin_addr.s_addr,
+		  s->h_length);
+
 
 	// setting up a socket
 	int udpSocket = 0;
 	if ((udpSocket = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
 	{
-		std::cout << "Socket Error: " << strerror(errno) << " \n";
+		std::cout << "Sending Socket Error: \n";
 		exit(1);
 	}
 
+
 	//file descriptor
 	FILE *file;					//holding the file to read
-	file = fopen(argv[3], "r"); // filename
+	file = fopen(argv[4], "r"); // filename
 
 	//file descriptor
 	ofstream seqNumLog; //for clientsequm.log
@@ -237,17 +259,17 @@ int main(int argc, char *argv[])
 		{	
 
 			//receiving data
-			int c = recvfrom(udpSocket, receivedData, sizeof(receivedData), 0, (struct sockaddr *)&server, &slen);
+			int c = recvfrom(udpSocket, receivedData, sizeof(receivedData), 0, (struct sockaddr *)&recvServer, &slen);
 			if (c < 0)
 			{
 
 				perror("Receiving error\n");
+				exit(1);
 			}
 
 			//packing data
 			packet pack(0, 0, 0, NULL);
 			
-
 			//deserializing received data
 			pack.deserialize((char *)receivedData);
 
@@ -291,7 +313,7 @@ int main(int argc, char *argv[])
 		//udpsocket error
 		else if (setTimer < 0)
 		{
-			std::cout << "Socket Error: " << strerror(errno) << " \n";
+			std::cout << "Socket Error \n";
 			exit(1);
 		}
 		//timeout occured
@@ -304,7 +326,7 @@ int main(int argc, char *argv[])
 			//resending the packet from same way as before
 			for (int i = (seqnum - 6) % 8; i < seqnum + 1; ++i)
 			{
-				if (data[i] != nullptr)
+				if (data[i] != NULL)
 				{
 					pack = packet(type, i, length, data[i]);
 
