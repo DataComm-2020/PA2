@@ -180,4 +180,8 @@ int main(int argc, char *argv[])
   outfile.close(); //close the file
 
   close(udp_socket); // close the socket
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> dbc04ac22ce7ab537531ef5e836dc989ea3c6944
