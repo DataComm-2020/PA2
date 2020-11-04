@@ -211,9 +211,12 @@ int main(int argc, char *argv[])
 				//write to seqNumLog file
 				seqNumLog << pack.getSeqNum() << endl;
 			}
+			else if(readCount == 0){
+				endOfFileReached = true;
+			}
 			else
 			{
-
+				
 				data[seqnum][readCount] = '\0';
 
 				//packing last data
