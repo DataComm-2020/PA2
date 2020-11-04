@@ -168,8 +168,11 @@ int main(int argc, char *argv[])
       expectseq = (expectseq + 1) % 8;
     }
     else // if sequence number doesnot resend the ack to the server
-    {
-      packet ackpacket(acktype, expectseq, 0, 0);
+    { 
+      int seenseq = expectseq - 1;
+      seenseq = (seenseq) % 8;
+
+      packet ackpacket = packet(acktype, seenseq, 0, NULL);
       ackpacket.serialize((char *)ackData);
       sendto(udp_socket, ackData, sizeof(ackData), 0, (struct sockaddr *)&emulatorSend, sizeof(emulatorSend));
       ackpacket.printContents();
